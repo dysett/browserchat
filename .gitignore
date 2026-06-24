@@ -1,0 +1,15 @@
+﻿target/
+*.class
+*.log
+
+.idea/
+.vscode/
+
+node_modules/
+
+chat.db
+chat.db-journal
+chat.db-wal
+chat.db-shm
+
+exported_avatars/

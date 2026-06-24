@@ -1,0 +1,453 @@
+/* Глобальні змінні теми: кольори, тіні, радіуси та базові відступи. */
+:root {
+    color-scheme: light;
+    --page: #eaf7ff;
+    --surface: #ffffff;
+    --surface-soft: #f3fbff;
+    --line: #b9dff2;
+    --text: #12314a;
+    --muted: #5c7790;
+    --blue: #087fca;
+    --blue-dark: #0569aa;
+    --cyan: #18b7d9;
+    --accent-soft: #d9f2ff;
+    --mine: #c8edff;
+    --theirs: #ffffff;
+    --danger: #ba3452;
+    --shadow: 0 12px 28px rgba(5, 74, 116, 0.13);
+}
+
+:root/* Темна тема перевизначає основні кольори інтерфейсу. */
+[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d2435;
+    --surface: #14354a;
+    --surface-soft: #17435c;
+    --line: #2d6887;
+    --text: #e6f6ff;
+    --muted: #a8c8da;
+    --blue: #35b9f0;
+    --blue-dark: #1399d1;
+    --cyan: #3ed4e8;
+    --accent-soft: #1b5671;
+    --mine: #176a91;
+    --theirs: #173a50;
+    --danger: #ee7d92;
+    --shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; overflow: hidden; }
+
+body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 0;
+    background: var(--page);
+    color: var(--text);
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 15px;
+}
+
+button, input, textarea { font: inherit; }
+button { cursor: pointer; }
+.hidden { display: none !important; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* Екран авторизації розміщує форму по центру сторінки. */
+.auth-screen {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: linear-gradient(135deg, #0c83c9, #19b6d8);
+}
+
+.auth-panel {
+    width: min(100%, 390px);
+    padding: 34px;
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.96);
+    color: #12314a;
+    box-shadow: 0 18px 45px rgba(4, 58, 94, 0.28);
+}
+
+.brand-mark {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #087fca, #18b7d9);
+    color: #fff;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+.brand-mark.small { width: 32px; height: 32px; font-size: 11px; }
+.eyebrow { margin: 20px 0 6px; color: #087fca; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+h1, h2, p { margin-top: 0; }
+h1 { margin-bottom: 8px; font-size: 28px; }
+h2 { font-size: 16px; }
+.muted, #conversationStatus { color: var(--muted); }
+
+.auth-form, .dialog form { display: grid; gap: 14px; }
+label { display: grid; gap: 6px; font-weight: 600; font-size: 13px; }
+input, textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 10px 11px;
+    outline: none;
+    color: var(--text);
+    background: var(--surface);
+}
+.auth-panel input { color: #12314a; background: #fff; border-color: #abd8ee; }
+input:focus, textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(24, 183, 217, 0.15); }
+
+.primary-button, .secondary-button, .logout-button, .icon-button, .text-button, .close-button {
+    border: 1px solid transparent;
+    border-radius: 5px;
+    font-weight: 600;
+    transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+.primary-button { padding: 10px 16px; color: #fff; background: linear-gradient(135deg, var(--blue), var(--cyan)); }
+.primary-button:hover { transform: translateY(-1px); }
+.secondary-button { padding: 9px 14px; background: var(--surface); color: var(--blue-dark); border-color: var(--line); }
+.danger-button { color: var(--danger); }
+.text-button { margin-top: 14px; padding: 0; background: transparent; color: #087fca; }
+.form-error { min-height: 18px; margin: 0; color: var(--danger); font-size: 13px; }
+
+/* Основна сітка застосунку: ліва панель, розділювач і область чату. */
+.app-shell {
+    min-height: 0;
+    height: 100vh;
+    height: 100dvh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+}
+.topbar {
+    min-height: 62px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 24px;
+    color: #fff;
+    background: linear-gradient(100deg, #087fca, #18b7d9);
+    box-shadow: 0 3px 12px rgba(5, 74, 116, 0.2);
+}
+.brand, .topbar-actions { display: flex; align-items: center; gap: 10px; }
+.brand { font-weight: 700; }
+.account-label { font-size: 13px; font-weight: 600; }
+.icon-button, .logout-button { min-width: 34px; min-height: 34px; padding: 6px 10px; color: #fff; background: rgba(2, 81, 135, 0.34); border-color: rgba(255, 255, 255, 0.28); }
+.icon-button { font-size: 20px; line-height: 1; }
+.group-actions-button { color: var(--blue-dark); background: var(--surface-soft); border-color: var(--line); font-size: 16px; letter-spacing: 1px; }
+.logout-button { font-size: 13px; }
+.icon-button:hover, .logout-button:hover { background: rgba(2, 81, 135, 0.55); }
+.group-actions-button:hover { color: #fff; }
+
+.chat-layout {
+    display: grid;
+    grid-template-columns: minmax(180px, var(--sidebar-width, 330px)) 8px minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+}
+/* Ліва панель містить профіль, пошук і список діалогів. */
+.sidebar { min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--surface-soft); }
+/* Вертикальна межа між списком чатів і розмовою, яку можна перетягувати. */
+.sidebar-resize-handle {
+    min-width: 8px;
+    cursor: col-resize;
+    background: linear-gradient(90deg, var(--line), transparent 45%, transparent 55%, var(--line));
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    touch-action: none;
+}
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:focus-visible,
+.resizing-sidebar .sidebar-resize-handle {
+    background: color-mix(in srgb, var(--blue) 18%, var(--line));
+    outline: none;
+}
+.resizing-sidebar { cursor: col-resize; user-select: none; }
+.profile-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: calc(100% - 24px);
+    margin: 14px 12px 0;
+    padding: 10px;
+    color: var(--text);
+    text-align: left;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+}
+.profile-card:hover { background: var(--accent-soft); }
+.profile-avatar {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    overflow: hidden;
+    border-radius: 50%;
+    color: #fff;
+    background: linear-gradient(135deg, var(--blue), var(--cyan));
+    font-weight: 700;
+}
+.profile-avatar.large { width: 72px; height: 72px; font-size: 26px; }
+.profile-avatar img, .profile-editor-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.profile-summary { min-width: 0; display: grid; gap: 3px; }
+.profile-summary strong, .profile-summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-summary span { color: var(--muted); font-size: 12px; }
+.sidebar-heading { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px 10px; }
+.sidebar-heading h2 { margin: 0; }
+.count-badge { display: grid; place-items: center; min-width: 23px; height: 23px; padding: 0 6px; border-radius: 12px; background: var(--accent-soft); color: var(--blue-dark); font-size: 12px; font-weight: 700; }
+.search-field { padding: 0 12px 12px; }
+.chat-list { min-height: 0; flex: 1; overflow-y: auto; padding: 0 6px 12px; overscroll-behavior: contain; }
+.chat-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 10px 34px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 11px 10px;
+    border: 0;
+    border-radius: 5px;
+    text-align: left;
+    color: var(--text);
+    background: transparent;
+}
+.chat-row:hover { background: rgba(24, 183, 217, 0.1); }
+.chat-row.selected { background: var(--accent-soft); }
+.chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.chat-kind { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.online-dot { width: 9px; height: 9px; border-radius: 50%; background: transparent; }
+.online-dot.online { background: #19b55c; box-shadow: 0 0 0 2px var(--surface-soft); }
+.chat-avatar {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    overflow: hidden;
+    border-radius: 50%;
+    color: #fff;
+    background: linear-gradient(135deg, var(--blue), var(--cyan));
+    font-size: 13px;
+    font-weight: 700;
+}
+.chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.group-avatar { background: var(--accent-soft); color: var(--blue-dark); }
+.unread-badge { min-width: 21px; height: 21px; padding: 2px 6px; border-radius: 11px; color: #fff; background: var(--blue); font-size: 11px; font-weight: 700; text-align: center; }
+.chat-section { padding: 12px 10px 6px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .7px; }
+.empty-state { padding: 28px 16px; color: var(--muted); text-align: center; }
+
+/* Права область відповідає за активну розмову. */
+.conversation { min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--page); }
+.conversation-header { min-height: 84px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.conversation-identity { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.header-avatar { width: 42px; height: 42px; font-size: 16px; }
+.conversation-header h2 { margin: 0 0 4px; font-size: 17px; }
+.conversation-header p { margin: 0; font-size: 13px; }
+.message-search { display: block; padding: 8px 18px; background: var(--surface-soft); border-bottom: 1px solid var(--line); }
+.message-search input { height: 34px; padding: 7px 10px; }
+/* Список повідомлень прокручується незалежно від решти сторінки. */
+.message-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px clamp(16px, 5vw, 70px); display: flex; flex-direction: column; gap: 10px; }
+/* Рядок повідомлення вирівнює власні й чужі повідомлення по різних сторонах. */
+.message-row { display: flex; }
+.message-row.own { justify-content: flex-end; }
+/* Бульбашка повідомлення містить текст, автора, час і службові позначки. */
+.message-bubble { max-width: min(78%, 680px); padding: 9px 11px; border: 1px solid var(--line); border-left: 3px solid var(--sender-color, var(--line)); border-radius: 7px; background: var(--theirs); box-shadow: 0 2px 7px rgba(7, 76, 119, 0.08); }
+.message-row.own .message-bubble { background: var(--mine); border-color: #8fd7f2; }
+.message-meta { display: flex; justify-content: flex-end; gap: 7px; margin-top: 5px; color: var(--muted); font-size: 11px; }
+.message-author { margin-bottom: 4px; color: var(--sender-color, var(--blue-dark)); font-size: 12px; font-weight: 700; }
+.message-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.35; }
+.message-edited { font-style: italic; }
+.reply-quote {
+    display: grid;
+    gap: 2px;
+    width: 100%;
+    margin-bottom: 7px;
+    padding: 6px 8px;
+    overflow: hidden;
+    color: var(--text);
+    text-align: left;
+    border: 0;
+    border-left: 3px solid var(--sender-color, var(--blue));
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--accent-soft) 76%, transparent);
+}
+.reply-quote strong, .reply-quote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-quote strong { color: var(--sender-color, var(--blue-dark)); font-size: 11px; }
+.reply-quote span { color: var(--muted); font-size: 12px; }
+.composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; padding: 10px 18px 12px; background: var(--surface); border-top: 1px solid var(--line); }
+.typing-indicator { grid-column: 1 / -1; min-height: 15px; margin: 0; color: var(--blue-dark); font-size: 12px; font-style: italic; }
+.reply-preview { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 9px; border-left: 3px solid var(--blue); border-radius: 4px; background: var(--surface-soft); }
+.reply-preview div { min-width: 0; }
+.reply-preview strong, .reply-preview p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-preview strong { color: var(--blue-dark); font-size: 12px; }
+.reply-preview p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.composer textarea { min-height: 42px; max-height: 120px; resize: vertical; }
+
+/* Діалогові вікна використовуються для профілю, груп, друзів і панелі адміністратора. */
+.dialog { width: min(92vw, 390px); padding: 0; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface); box-shadow: var(--shadow); }
+.dialog::backdrop { background: rgba(5, 38, 61, 0.48); }
+.dialog form { padding: 20px; }
+.dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.dialog-heading h2 { margin: 0; font-size: 18px; }
+.close-button { width: 28px; height: 28px; color: var(--muted); background: transparent; border-color: var(--line); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.member-management { display: grid; gap: 10px; }
+.group-lifecycle-actions { justify-content: space-between; }
+.admin-dialog { width: min(92vw, 500px); }
+.admin-user-list { max-height: min(48vh, 360px); overflow-y: auto; border: 1px solid var(--line); border-radius: 5px; }
+.admin-user-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 10px; border-bottom: 1px solid var(--line); }
+.admin-user-row:last-child { border-bottom: 0; }
+.admin-user-actions { display: flex; gap: 6px; align-items: center; }
+.admin-user-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.admin-user-meta { margin-top: 2px; color: var(--muted); font-size: 11px; }
+.admin-user-row button { padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--blue-dark); background: var(--surface-soft); font-size: 12px; font-weight: 600; }
+.admin-user-row button.danger { color: var(--danger); }
+.profile-editor-avatar { display: grid; place-items: center; width: 72px; height: 72px; margin: 0 auto; overflow: hidden; border-radius: 50%; }
+.profile-editor-avatar img { display: block; }
+/* Блок керування аватаркою групи доступний власнику або адміністратору групи. */
+.group-avatar-management { display: grid; gap: 10px; margin: 8px 0 12px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); }
+.group-avatar-management.hidden { display: none; }
+.group-editor-avatar { margin-bottom: 2px; }
+.group-avatar-actions { justify-content: space-between; }
+.toast { position: fixed; right: 20px; bottom: 20px; max-width: min(360px, calc(100vw - 40px)); padding: 12px 14px; border-radius: 5px; color: #fff; background: #08699f; box-shadow: var(--shadow); }
+
+/* Адаптація для маленьких екранів: інтерфейс стає компактнішим. */
+@media (max-width: 720px) {
+    .topbar { padding: 10px 14px; }
+    .account-label { display: none; }
+    .chat-layout { grid-template-columns: minmax(135px, var(--sidebar-width, 42vw)) 8px minmax(0, 1fr); }
+    .conversation-header { padding: 12px; }
+    .conversation-header h2 { max-width: 145px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .message-list { padding: 14px; }
+    .message-bubble { max-width: 90%; }
+    .composer, .message-search { padding: 10px; }
+    .composer .primary-button { padding: 8px 11px; }
+}
+
+/* Блок реакцій показує emoji та кількість користувачів, які їх поставили. */
+.message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 7px;
+}
+.message-reaction {
+    min-height: 24px;
+    padding: 2px 7px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    color: var(--text);
+    background: var(--surface);
+    font-size: 13px;
+    line-height: 1;
+}
+.message-reaction:hover,
+.message-reaction.selected {
+    border-color: var(--blue);
+    color: var(--blue-dark);
+    background: var(--accent-soft);
+}
+/* Меню реакцій показує набір швидких emoji для повідомлення. */
+/* Меню реакцій відкривається після дії з повідомленням і дає швидко обрати emoji. */
+.reaction-menu {
+    position: fixed;
+    z-index: 30;
+    display: flex;
+    gap: 6px;
+    padding: 7px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+.reaction-menu button {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    font-size: 20px;
+    transition: transform .12s ease, background .12s ease;
+}
+.reaction-menu button:hover,
+.reaction-menu button.selected {
+    background: var(--accent-soft);
+    transform: scale(1.08);
+}
+.dialog select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    color: var(--text);
+    background: var(--surface);
+    font: inherit;
+}
+.profile-hint {
+    margin-top: -2px;
+    font-size: 12px;
+    text-align: left;
+}
+
+.conversation-profile-button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    padding: 0;
+}
+.conversation-profile-button.profile-target {
+    cursor: pointer;
+    border-radius: 7px;
+    padding: 5px;
+    margin: -5px;
+}
+.conversation-profile-button.profile-target:hover {
+    background: var(--surface-soft);
+}
+.message-author-button,
+.profile-name-button {
+    display: inline;
+    width: auto;
+    padding: 0;
+    border: 0;
+    color: var(--sender-color, var(--blue-dark));
+    background: transparent;
+    font: inherit;
+    font-weight: 700;
+    text-align: left;
+}
+.message-author-button:hover,
+.profile-name-button:hover {
+    text-decoration: underline;
+}
+.profile-name-button {
+    color: var(--blue-dark);
+}
+.profile-view-dialog { width: min(92vw, 420px); }
+.profile-view-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 0;
+}
+.profile-view-text { min-width: 0; }
+.profile-view-text h3 { margin: 0 0 4px; font-size: 20px; }
+.profile-view-text p { margin-bottom: 0; }
+.profile-view-description {
+    margin-top: 10px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--text);
+}
