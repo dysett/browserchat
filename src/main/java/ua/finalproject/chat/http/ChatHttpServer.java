@@ -54,6 +54,7 @@ public final class ChatHttpServer implements AutoCloseable {
     private final ExecutorService executor;
     private final BrowserEventHub eventHub;
     private final Set<String> allowedOrigins;
+    private final List<ApiRoute> apiRoutes;
     private final Map<String, Map<String, Long>> browserTyping = new ConcurrentHashMap<>();
     private final Map<String, Long> browserLastSeen = new ConcurrentHashMap<>();
     private final ObjectMapper mapper = new ObjectMapper()
@@ -83,6 +84,7 @@ public final class ChatHttpServer implements AutoCloseable {
                 .map(String::trim)
                 .filter(origin -> !origin.isBlank())
                 .collect(Collectors.toUnmodifiableSet());
+        this.apiRoutes = createApiRoutes();
         this.server.setExecutor(executor);
         createContexts(this.tokenService);
     }
@@ -111,6 +113,39 @@ public final class ChatHttpServer implements AutoCloseable {
         HttpContext api = server.createContext("/api", this::handleProtectedApi);
         api.setAuthenticator(new BearerTokenAuthenticator(tokenService));
         server.createContext("/", this::handleStatic);
+    }
+
+    private List<ApiRoute> createApiRoutes() {
+        return List.of(
+                new ApiRoute("GET", "/api/me", (exchange, user) -> sendJson(exchange, 200, userDto(user))),
+                new ApiRoute("PUT", "/api/me", this::updateProfile),
+                new ApiRoute("GET", "/api/me/avatar", this::sendProfileAvatar),
+                new ApiRoute("GET", "/api/chats", this::chats),
+                new ApiRoute("GET", "/api/users/search", this::userSearch),
+                new ApiRoute("GET", "/api/events", (exchange, user) -> eventHub.open(exchange, user.username(), () -> markBrowserOnline(user.username()))),
+                new ApiRoute("GET", "/api/typing", this::typingUsers),
+                new ApiRoute("POST", "/api/typing", this::typing),
+                new ApiRoute("GET", "/api/messages", this::history),
+                new ApiRoute("POST", "/api/messages", this::sendMessage),
+                new ApiRoute("POST", "/api/groups", this::groupAction)
+        );
+    }
+
+    private boolean routeProtectedApi(HttpExchange exchange, ChatUser user, String path, String method) throws IOException {
+        List<ApiRoute> pathRoutes = apiRoutes.stream()
+                .filter(route -> route.path().equals(path))
+                .toList();
+        if (pathRoutes.isEmpty()) {
+            return false;
+        }
+        for (ApiRoute route : pathRoutes) {
+            if (route.method().equals(method)) {
+                route.handler().handle(exchange, user);
+                return true;
+            }
+        }
+        methodNotAllowed(exchange, pathRoutes.stream().map(ApiRoute::method).collect(Collectors.joining(", ")));
+        return true;
     }
 
     /**
@@ -176,6 +211,9 @@ public final class ChatHttpServer implements AutoCloseable {
             markBrowserOnline(user.username());
             String path = exchange.getRequestURI().getPath();
             String method = exchange.getRequestMethod();
+            if (routeProtectedApi(exchange, user, path, method)) {
+                return;
+            }
 
             // Дані поточного користувача потрібні інтерфейсу після входу.
             if ("/api/me".equals(path) && "GET".equals(method)) {
@@ -408,6 +446,7 @@ public final class ChatHttpServer implements AutoCloseable {
                 request.removeAvatar(),
                 request.quickReaction()
         );
+        publishUserUpdate(updated.username(), "profile-updated");
         sendJson(exchange, 200, userDto(updated));
     }
 
@@ -465,6 +504,13 @@ public final class ChatHttpServer implements AutoCloseable {
                 avatar == null ? null : avatar.contentType(),
                 request.removeAvatar()
         );
+        StoredMessage systemMessage = database.saveGroupEvent(
+                group,
+                user,
+                request.removeAvatar() ? "removed-avatar" : "changed-avatar",
+                null
+        );
+        publishMessageCreated(systemMessage);
         publishGroupUpdate(group, "group-avatar");
         sendJson(exchange, 200, new ActionResponse("Group avatar updated"));
     }
@@ -477,6 +523,38 @@ public final class ChatHttpServer implements AutoCloseable {
         eventHub.publish(database.groupMembers(group).stream()
                 .map(member -> OutboundEvent.toUser(member, event))
                 .toList());
+    }
+
+    private void publishMessageCreated(StoredMessage message) {
+        ChatMessage event = messageEvent(ChatCommand.EVENT_MESSAGE, message, "created");
+        eventHub.publish(database.messageRecipients(message).stream()
+                .map(recipient -> OutboundEvent.toUser(recipient, event))
+                .toList());
+    }
+
+    private void publishUserUpdate(String username, String action) {
+        ChatMessage event = ChatMessage.of(ChatCommand.EVENT_STATUS, 0, ChatMessage.fields(
+                "state", action,
+                "username", username,
+                "message", "User updated: " + username
+        ));
+        eventHub.publish(List.of(OutboundEvent.broadcast(event)));
+    }
+
+    private ChatMessage messageEvent(ChatCommand command, StoredMessage message, String action) {
+        return ChatMessage.of(command, 0, ChatMessage.fields(
+                "id", Long.toString(message.id()),
+                "chat", message.chatName(),
+                "from", message.sender(),
+                "to", message.recipient(),
+                "text", message.body(),
+                "createdAt", message.createdAt().toString(),
+                "status", message.status().name(),
+                "edited", Boolean.toString(message.edited()),
+                "deleted", Boolean.toString(message.deleted()),
+                "system", Boolean.toString(message.system()),
+                "action", action
+        ));
     }
 
     private void sendAvatar(HttpExchange exchange, ChatDatabase.UserAvatar avatar) throws IOException {
@@ -583,7 +661,10 @@ public final class ChatHttpServer implements AutoCloseable {
         }
         MemberRequest request = readJson(exchange, MemberRequest.class);
         String username = requireText(request.username(), "username");
-        database.setGroupAdmin(group, username, user, "POST".equals(method));
+        boolean admin = "POST".equals(method);
+        database.setGroupAdmin(group, username, user, admin);
+        StoredMessage systemMessage = database.saveGroupEvent(group, user, admin ? "made-admin" : "removed-admin", username);
+        publishMessageCreated(systemMessage);
         publishGroupUpdate(group, "group-admins");
         sendJson(exchange, 200, new ActionResponse("Group administrator rights updated"));
     }
@@ -992,6 +1073,14 @@ public final class ChatHttpServer implements AutoCloseable {
                 message.replyDeleted(),
                 message.reactions()
         );
+    }
+
+    @FunctionalInterface
+    private interface ProtectedApiHandler {
+        void handle(HttpExchange exchange, ChatUser user) throws IOException;
+    }
+
+    private record ApiRoute(String method, String path, ProtectedApiHandler handler) {
     }
 
     public record Credentials(String username, String password) {

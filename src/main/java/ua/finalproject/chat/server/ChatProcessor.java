@@ -140,11 +140,7 @@ public final class ChatProcessor {
     private ServerResult createGroup(ChatMessage request, ChatUser currentUser) {
         String group = request.requiredField("group");
         database.createGroupForUser(group, currentUser.id());
-        StoredMessage systemMessage = database.saveSystemGroupMessage(
-                group,
-                currentUser.id(),
-                currentUser.username() + " created the group"
-        );
+        StoredMessage systemMessage = database.saveGroupEvent(group, currentUser, "created", null);
         return ServerResult.response(ok(request, "Group created"))
                 .withEvents(eventsForMembers(group, systemMessage));
     }
@@ -152,11 +148,7 @@ public final class ChatProcessor {
     private ServerResult joinGroup(ChatMessage request, ChatUser currentUser) {
         String group = request.requiredField("group");
         database.joinGroup(currentUser.id(), group);
-        StoredMessage systemMessage = database.saveSystemGroupMessage(
-                group,
-                currentUser.id(),
-                currentUser.username() + " joined the group"
-        );
+        StoredMessage systemMessage = database.saveGroupEvent(group, currentUser, "joined", null);
         return ServerResult.response(ok(request, "Joined group"))
                 .withEvents(eventsForMembers(group, systemMessage));
     }
@@ -207,11 +199,7 @@ public final class ChatProcessor {
         String group = request.requiredField("group");
         String username = request.requiredField("username");
         database.addGroupMember(group, username, currentUser);
-        StoredMessage systemMessage = database.saveSystemGroupMessage(
-                group,
-                currentUser.id(),
-                currentUser.username() + " added " + username + " to the group"
-        );
+        StoredMessage systemMessage = database.saveGroupEvent(group, currentUser, "added", username);
         return ServerResult.response(ok(request, "Group member added"))
                 .withEvents(eventsForMembers(group, systemMessage));
     }
@@ -220,11 +208,7 @@ public final class ChatProcessor {
         String group = request.requiredField("group");
         String username = request.requiredField("username");
         database.removeGroupMember(group, username, currentUser);
-        StoredMessage systemMessage = database.saveSystemGroupMessage(
-                group,
-                currentUser.id(),
-                currentUser.username() + " removed " + username + " from the group"
-        );
+        StoredMessage systemMessage = database.saveGroupEvent(group, currentUser, "removed", username);
         ChatMessage removedEvent = ChatMessage.of(ChatCommand.EVENT_STATUS, 0, ChatMessage.fields(
                 "state", "group-removed",
                 "group", group,
@@ -239,11 +223,7 @@ public final class ChatProcessor {
     private ServerResult leaveGroup(ChatMessage request, ChatUser currentUser) {
         String group = request.requiredField("group");
         database.leaveGroup(group, currentUser);
-        StoredMessage systemMessage = database.saveSystemGroupMessage(
-                group,
-                currentUser.id(),
-                currentUser.username() + " left the group"
-        );
+        StoredMessage systemMessage = database.saveGroupEvent(group, currentUser, "left", null);
         ChatMessage leftEvent = groupStatusEvent("group-left", group, currentUser.username() + " left group " + group);
         List<OutboundEvent> events = new ArrayList<>(eventsForMembers(group, systemMessage));
         events.add(OutboundEvent.toUser(currentUser.username(), leftEvent));
@@ -345,23 +325,30 @@ public final class ChatProcessor {
     }
 
     private ServerResult deleteMessage(ChatMessage request, ChatUser currentUser) {
-        database.deleteMessage(Long.parseLong(request.requiredField("messageId")), currentUser);
-        return ServerResult.response(ok(request, "Message deleted"));
+        StoredMessage message = database.deleteMessage(Long.parseLong(request.requiredField("messageId")), currentUser);
+        return ServerResult.response(ok(request, "Message deleted"))
+                .withEvents(eventsForMessageUpdate(message, "deleted"));
     }
 
     private ServerResult blockUser(ChatMessage request, ChatUser currentUser) {
-        database.blockUser(request.requiredField("username"), currentUser);
-        return ServerResult.response(ok(request, "User blocked"));
+        String username = request.requiredField("username");
+        database.blockUser(username, currentUser);
+        return ServerResult.response(ok(request, "User blocked"))
+                .withEvents(List.of(userStatusEvent("user-blocked", username)));
     }
 
     private ServerResult unblockUser(ChatMessage request, ChatUser currentUser) {
-        database.unblockUser(request.requiredField("username"), currentUser);
-        return ServerResult.response(ok(request, "User unblocked"));
+        String username = request.requiredField("username");
+        database.unblockUser(username, currentUser);
+        return ServerResult.response(ok(request, "User unblocked"))
+                .withEvents(List.of(userStatusEvent("user-unblocked", username)));
     }
 
     private ServerResult deleteUser(ChatMessage request, ChatUser currentUser) {
-        database.deleteUserPermanently(request.requiredField("username"), currentUser);
-        return ServerResult.response(ok(request, "User permanently deleted"));
+        String username = request.requiredField("username");
+        database.deleteUserPermanently(username, currentUser);
+        return ServerResult.response(ok(request, "User permanently deleted"))
+                .withEvents(List.of(userStatusEvent("user-deleted", username)));
     }
 
     private ServerResult markRead(ChatMessage request, ChatUser currentUser) {
@@ -393,6 +380,15 @@ public final class ChatProcessor {
                 "group", group,
                 "message", message
         ));
+    }
+
+    private OutboundEvent userStatusEvent(String state, String username) {
+        ChatMessage event = ChatMessage.of(ChatCommand.EVENT_STATUS, 0, ChatMessage.fields(
+                "state", state,
+                "username", username,
+                "message", "User updated: " + username
+        ));
+        return OutboundEvent.broadcast(event);
     }
 
     private List<OutboundEvent> eventsForMembers(String chatName, StoredMessage message) {

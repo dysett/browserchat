@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -961,13 +962,14 @@ public final class ChatDatabase implements AutoCloseable {
         }
     }
 
-    public synchronized void deleteMessage(long messageId, ChatUser actor) {
+    public synchronized StoredMessage deleteMessage(long messageId, ChatUser actor) {
         requireAdmin(actor);
         try (PreparedStatement statement = connection.prepareStatement("update messages set deleted = 1, body = '[deleted]' where id = ?")) {
             statement.setLong(1, messageId);
             if (statement.executeUpdate() == 0) {
                 throw new IllegalArgumentException("Message not found: " + messageId);
             }
+            return historyById(messageId);
         } catch (SQLException e) {
             throw new IllegalStateException("Cannot delete message", e);
         }
@@ -1090,7 +1092,7 @@ public final class ChatDatabase implements AutoCloseable {
     private void init() throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("pragma foreign_keys = on");
-            statement.execute("""
+            ensureTable(statement, "users", """
                     create table if not exists users (
                         id integer primary key autoincrement,
                         username text not null unique,
@@ -1101,7 +1103,7 @@ public final class ChatDatabase implements AutoCloseable {
                         created_at text not null
                     )
                     """);
-            statement.execute("""
+            ensureTable(statement, "chats", """
                     create table if not exists chats (
                         id integer primary key autoincrement,
                         name text not null unique,
@@ -1109,7 +1111,7 @@ public final class ChatDatabase implements AutoCloseable {
                         owner_id integer references users(id)
                     )
                     """);
-            statement.execute("""
+            ensureTable(statement, "chat_members", """
                     create table if not exists chat_members (
                         chat_id integer not null references chats(id),
                         user_id integer not null references users(id),
@@ -1119,7 +1121,7 @@ public final class ChatDatabase implements AutoCloseable {
                         primary key (chat_id, user_id)
                     )
                     """);
-            statement.execute("""
+            ensureTable(statement, "messages", """
                     create table if not exists messages (
                         id integer primary key autoincrement,
                         chat_id integer not null references chats(id),
@@ -1134,14 +1136,14 @@ public final class ChatDatabase implements AutoCloseable {
                         reply_to_message_id integer references messages(id)
                     )
                     """);
-            statement.execute("""
+            ensureTable(statement, "friendships", """
                     create table if not exists friendships (
                         user_id integer not null references users(id),
                         friend_id integer not null references users(id),
                         primary key (user_id, friend_id)
                     )
                     """);
-            statement.execute("""
+            ensureTable(statement, "message_reactions", """
                     create table if not exists message_reactions (
                         message_id integer not null references messages(id) on delete cascade,
                         user_id integer not null references users(id) on delete cascade,
@@ -1150,6 +1152,7 @@ public final class ChatDatabase implements AutoCloseable {
                         primary key (message_id, user_id)
                     )
                     """);
+
             ensureColumn(statement, "users", "password_salt", "text");
             ensureColumn(statement, "users", "description", "text not null default ''");
             ensureColumn(statement, "users", "avatar_data", "blob");
@@ -1165,27 +1168,16 @@ public final class ChatDatabase implements AutoCloseable {
             ensureColumn(statement, "chat_members", "joined_at", "text");
             ensureColumn(statement, "chat_members", "joined_after_message_id", "integer not null default 0");
             ensureColumn(statement, "chat_members", "is_admin", "integer not null default 0");
-            statement.executeUpdate("update chat_members set joined_at = '1970-01-01T00:00:00Z' where joined_at is null");
-            statement.executeUpdate("update chat_members set joined_after_message_id = 0 where joined_after_message_id is null");
-            statement.executeUpdate("""
-                    update chats
-                    set owner_id = (
-                        select min(cm.user_id)
-                        from chat_members cm
-                        where cm.chat_id = chats.id
-                    )
-                    where type = 'GROUP' and name <> 'general' and owner_id is null
-                    """);
-            statement.executeUpdate("""
-                    update chat_members
-                    set is_admin = 1
-                    where exists (
-                        select 1
-                        from chats c
-                        where c.id = chat_members.chat_id
-                          and c.owner_id = chat_members.user_id
-                    )
-                    """);
+
+            ensureIndex(statement, "idx_messages_chat_id", "create index if not exists idx_messages_chat_id on messages(chat_id, id)");
+            ensureIndex(statement, "idx_messages_sender_id", "create index if not exists idx_messages_sender_id on messages(sender_id)");
+            ensureIndex(statement, "idx_messages_recipient_id", "create index if not exists idx_messages_recipient_id on messages(recipient_id)");
+            ensureIndex(statement, "idx_chat_members_user_id", "create index if not exists idx_chat_members_user_id on chat_members(user_id)");
+            ensureIndex(statement, "idx_friendships_friend_id", "create index if not exists idx_friendships_friend_id on friendships(friend_id)");
+            ensureIndex(statement, "idx_reactions_user_id", "create index if not exists idx_reactions_user_id on message_reactions(user_id)");
+
+            normalizeExistingData(statement);
+            ensureDefaultAdmin(statement);
         }
         ensureChat(GENERAL_CHAT, "GROUP");
     }
@@ -1223,6 +1215,47 @@ public final class ChatDatabase implements AutoCloseable {
             connection.rollback();
         } catch (SQLException ignored) {
         }
+    }
+
+    private void ensureTable(Statement statement, String tableName, String createSql) throws SQLException {
+        statement.execute(createSql);
+    }
+
+    private void ensureIndex(Statement statement, String indexName, String createSql) throws SQLException {
+        statement.execute(createSql);
+    }
+
+    private void normalizeExistingData(Statement statement) throws SQLException {
+        statement.executeUpdate("update chat_members set joined_at = '1970-01-01T00:00:00Z' where joined_at is null");
+        statement.executeUpdate("update chat_members set joined_after_message_id = 0 where joined_after_message_id is null");
+        statement.executeUpdate("update messages set status = 'SENT' where status is null or status = ''");
+        statement.executeUpdate("update messages set system = 0 where system is null");
+        statement.executeUpdate("update messages set edited = 0 where edited is null");
+        statement.executeUpdate("update users set description = '' where description is null");
+        statement.executeUpdate("update users set quick_reaction = '❤️' where quick_reaction is null or quick_reaction = ''");
+    }
+
+    private void ensureDefaultAdmin(Statement statement) throws SQLException {
+        statement.executeUpdate("update users set role = 'ADMIN' where lower(username) = 'admin'");
+        statement.executeUpdate("""
+                update chats
+                set owner_id = (
+                    select min(cm.user_id)
+                    from chat_members cm
+                    where cm.chat_id = chats.id
+                )
+                where type = 'GROUP' and name <> 'general' and owner_id is null
+                """);
+        statement.executeUpdate("""
+                update chat_members
+                set is_admin = 1
+                where exists (
+                    select 1
+                    from chats c
+                    where c.id = chat_members.chat_id
+                      and c.owner_id = chat_members.user_id
+                )
+                """);
     }
 
     private void ensureColumn(Statement statement, String table, String column, String definition) throws SQLException {
@@ -1457,6 +1490,31 @@ public final class ChatDatabase implements AutoCloseable {
             throw new IllegalStateException("Cannot check friendship", e);
         }
         throw new IllegalArgumentException("Add this user as a friend before starting a private chat");
+    }
+
+    /**
+     * Формує службове повідомлення за типом групової події.
+     * Один метод використовується для створення групи, входу, додавання, видалення та виходу учасників.
+     */
+    public synchronized StoredMessage saveGroupEvent(String groupName, ChatUser actor, String action, String targetUser) {
+        Objects.requireNonNull(actor, "actor");
+        String group = requireName(groupName, "groupName");
+        String verb = requireName(action, "action").toLowerCase(Locale.ROOT);
+        String target = targetUser == null ? "" : targetUser.trim();
+        String actorName = actor.username();
+        String body = switch (verb) {
+            case "created" -> actorName + " created the group";
+            case "joined" -> actorName + " joined the group";
+            case "added" -> actorName + " added " + requireName(target, "targetUser") + " to the group";
+            case "removed" -> actorName + " removed " + requireName(target, "targetUser") + " from the group";
+            case "left" -> actorName + " left the group";
+            case "made-admin" -> actorName + " made " + requireName(target, "targetUser") + " a group admin";
+            case "removed-admin" -> actorName + " removed admin rights from " + requireName(target, "targetUser");
+            case "changed-avatar" -> actorName + " changed the group avatar";
+            case "removed-avatar" -> actorName + " removed the group avatar";
+            default -> throw new IllegalArgumentException("Unknown group event action: " + action);
+        };
+        return saveSystemGroupMessage(group, actor.id(), body);
     }
 
     /**

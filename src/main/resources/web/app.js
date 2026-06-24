@@ -374,23 +374,51 @@
             void loadTyping(state.selected);
             return;
         }
-        if (event.command === "EVENT_MESSAGE_UPDATE" && event.fields?.action === "group-avatar") {
-            state.chats.filter((chat) => chat.type === "group" && chat.key === event.fields.group).forEach((chat) => {
-                const key = avatarCacheKey(chat);
-                const avatar = state.peerAvatarUrls.get(key);
-                if (avatar) URL.revokeObjectURL(avatar);
-                state.peerAvatarUrls.delete(key);
-                state.peerAvatarUnavailable.delete(key);
-            });
+
+        const action = event.fields?.action;
+        const group = event.fields?.group;
+        const selectedGroupChanged = state.selected?.type === "group" && state.selected.key === group;
+
+        if (event.command === "EVENT_MESSAGE_UPDATE" && action === "group-avatar") {
+            clearGroupAvatarCache(group);
+            selectedGroupChanged ? void refreshGroupState() : scheduleRefresh();
+            return;
         }
-        if (event.command === "EVENT_MESSAGE_UPDATE"
-                && ["group-members", "group-admins"].includes(event.fields?.action)
-                && membersDialog.open
-                && state.selected?.type === "group"
-                && state.selected.key === event.fields.group) {
-            void loadGroupMembers();
+
+        if (event.command === "EVENT_MESSAGE_UPDATE" && ["group-members", "group-admins"].includes(action)) {
+            selectedGroupChanged ? void refreshGroupState() : scheduleRefresh();
+            return;
         }
+
+        if (event.command === "EVENT_STATUS" && event.fields?.state === "profile-updated") {
+            clearUserAvatarCache(event.fields.username);
+        }
+
         if (event.command) scheduleRefresh();
+    }
+
+    function clearGroupAvatarCache(group) {
+        state.chats.filter((chat) => chat.type === "group" && chat.key === group).forEach((chat) => {
+            const key = avatarCacheKey(chat);
+            const avatar = state.peerAvatarUrls.get(key);
+            if (avatar) URL.revokeObjectURL(avatar);
+            state.peerAvatarUrls.delete(key);
+            state.peerAvatarUnavailable.delete(key);
+        });
+    }
+
+    function clearUserAvatarCache(username) {
+        if (!username) return;
+        state.chats.filter((chat) => chat.type === "private" && chat.key === username).forEach((chat) => {
+            const key = avatarCacheKey(chat);
+            const avatar = state.peerAvatarUrls.get(key);
+            if (avatar) URL.revokeObjectURL(avatar);
+            state.peerAvatarUrls.delete(key);
+            state.peerAvatarUnavailable.delete(key);
+        });
+        if (state.currentUser?.username === username) {
+            void loadProfileAvatar();
+        }
     }
 
     function scheduleRefresh() {
@@ -445,6 +473,15 @@
             state.currentMessages = [];
             renderMessages();
         }
+    }
+
+    async function refreshGroupState() {
+        const wasGroup = state.selected?.type === "group";
+        await refreshChats();
+        if (wasGroup && state.selected?.type === "group" && membersDialog.open) {
+            await loadGroupMembers();
+        }
+        updateConversationHeader();
     }
 
     function sameChat(first, second) {
@@ -1091,7 +1128,7 @@
             if (old) URL.revokeObjectURL(old);
             state.peerAvatarUrls.delete(key);
             state.peerAvatarUnavailable.delete(key);
-            await refreshChats();
+            await refreshGroupState();
             showToast("Group avatar saved");
         } catch (error) {
             $("membersError").textContent = error.message;
@@ -1107,8 +1144,7 @@
         try {
             const group = encodeURIComponent(state.selected.key);
             await api(`/api/groups/${group}/admins`, { method: admin ? "POST" : "DELETE", body: JSON.stringify({ username }) });
-            await loadGroupMembers();
-            await refreshChats();
+            await refreshGroupState();
             showToast(admin ? "Admin rights granted" : "Admin rights removed");
         } catch (error) {
             $("membersError").textContent = error.message;
@@ -1126,8 +1162,7 @@
             const group = encodeURIComponent(state.selected.key);
             await api(`/api/groups/${group}/members`, { method: "POST", body: JSON.stringify({ username }) });
             $("memberNameInput").value = "";
-            await loadGroupMembers();
-            await refreshChats();
+            await refreshGroupState();
             showToast("Member added");
         } catch (error) {
             $("membersError").textContent = error.message;
@@ -1145,8 +1180,7 @@
             const group = encodeURIComponent(state.selected.key);
             await api(`/api/groups/${group}/members`, { method: "DELETE", body: JSON.stringify({ username }) });
             $("memberNameInput").value = "";
-            await loadGroupMembers();
-            await refreshChats();
+            await refreshGroupState();
             showToast("Member removed");
         } catch (error) {
             $("membersError").textContent = error.message;
