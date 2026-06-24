@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -139,17 +140,25 @@ public final class ChatProcessor {
     private ServerResult createGroup(ChatMessage request, ChatUser currentUser) {
         String group = request.requiredField("group");
         database.createGroupForUser(group, currentUser.id());
-        ChatMessage event = groupStatusEvent("group-created", group, "Group created: " + group);
+        StoredMessage systemMessage = database.saveSystemGroupMessage(
+                group,
+                currentUser.id(),
+                currentUser.username() + " created the group"
+        );
         return ServerResult.response(ok(request, "Group created"))
-                .withEvents(List.of(OutboundEvent.toUser(currentUser.username(), event)));
+                .withEvents(eventsForMembers(group, systemMessage));
     }
 
     private ServerResult joinGroup(ChatMessage request, ChatUser currentUser) {
         String group = request.requiredField("group");
         database.joinGroup(currentUser.id(), group);
-        ChatMessage event = groupStatusEvent("group-joined", group, "Joined group: " + group);
+        StoredMessage systemMessage = database.saveSystemGroupMessage(
+                group,
+                currentUser.id(),
+                currentUser.username() + " joined the group"
+        );
         return ServerResult.response(ok(request, "Joined group"))
-                .withEvents(List.of(OutboundEvent.toUser(currentUser.username(), event)));
+                .withEvents(eventsForMembers(group, systemMessage));
     }
 
     private ServerResult sendGroup(ChatMessage request, ChatUser currentUser) {
@@ -198,35 +207,48 @@ public final class ChatProcessor {
         String group = request.requiredField("group");
         String username = request.requiredField("username");
         database.addGroupMember(group, username, currentUser);
-        ChatMessage event = ChatMessage.of(ChatCommand.EVENT_STATUS, 0, ChatMessage.fields(
-                "state", "group-added",
-                "group", group,
-                "message", "Added to group " + group
-        ));
+        StoredMessage systemMessage = database.saveSystemGroupMessage(
+                group,
+                currentUser.id(),
+                currentUser.username() + " added " + username + " to the group"
+        );
         return ServerResult.response(ok(request, "Group member added"))
-                .withEvents(List.of(OutboundEvent.toUser(username, event)));
+                .withEvents(eventsForMembers(group, systemMessage));
     }
 
     private ServerResult removeGroupMember(ChatMessage request, ChatUser currentUser) {
         String group = request.requiredField("group");
         String username = request.requiredField("username");
         database.removeGroupMember(group, username, currentUser);
-        ChatMessage event = ChatMessage.of(ChatCommand.EVENT_STATUS, 0, ChatMessage.fields(
+        StoredMessage systemMessage = database.saveSystemGroupMessage(
+                group,
+                currentUser.id(),
+                currentUser.username() + " removed " + username + " from the group"
+        );
+        ChatMessage removedEvent = ChatMessage.of(ChatCommand.EVENT_STATUS, 0, ChatMessage.fields(
                 "state", "group-removed",
                 "group", group,
                 "message", "Removed from group " + group
         ));
+        List<OutboundEvent> events = new ArrayList<>(eventsForMembers(group, systemMessage));
+        events.add(OutboundEvent.toUser(username, removedEvent));
         return ServerResult.response(ok(request, "Group member removed"))
-                .withEvents(List.of(OutboundEvent.toUser(username, event)));
+                .withEvents(events);
     }
 
     private ServerResult leaveGroup(ChatMessage request, ChatUser currentUser) {
         String group = request.requiredField("group");
-        List<String> members = database.groupMembers(group);
         database.leaveGroup(group, currentUser);
-        ChatMessage event = groupStatusEvent("group-left", group, currentUser.username() + " left group " + group);
+        StoredMessage systemMessage = database.saveSystemGroupMessage(
+                group,
+                currentUser.id(),
+                currentUser.username() + " left the group"
+        );
+        ChatMessage leftEvent = groupStatusEvent("group-left", group, currentUser.username() + " left group " + group);
+        List<OutboundEvent> events = new ArrayList<>(eventsForMembers(group, systemMessage));
+        events.add(OutboundEvent.toUser(currentUser.username(), leftEvent));
         return ServerResult.response(ok(request, "Left group"))
-                .withEvents(statusEvents(members, event));
+                .withEvents(events);
     }
 
     private ServerResult deleteGroup(ChatMessage request, ChatUser currentUser) {
@@ -414,11 +436,15 @@ public final class ChatProcessor {
                 "status", status.name(),
                 "edited", Boolean.toString(message.edited()),
                 "deleted", Boolean.toString(message.deleted()),
+                "system", Boolean.toString(message.system()),
                 "action", action
         ));
     }
 
     private String historyLine(StoredMessage message) {
+        if (message.system()) {
+            return MESSAGE_TIME.format(message.createdAt()) + " " + message.body();
+        }
         String edited = message.edited() && !message.deleted() ? " (edited)" : "";
         return MESSAGE_TIME.format(message.createdAt()) + " " + message.sender() + ": " + message.body() + edited;
     }

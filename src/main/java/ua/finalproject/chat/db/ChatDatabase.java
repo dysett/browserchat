@@ -778,7 +778,7 @@ public final class ChatDatabase implements AutoCloseable {
         int safeLimit = Math.max(1, Math.min(limit, 100));
         String sql = """
                 select m.id, c.name as chat_name, u.username as sender, r.username as recipient,
-                       m.body, m.created_at, m.deleted, m.status, m.edited,
+                       m.body, m.created_at, m.deleted, m.system, m.status, m.edited,
                        m.reply_to_message_id as reply_to_id, reply_sender.username as reply_sender,
                        reply.body as reply_body, reply.deleted as reply_deleted
                 from messages m
@@ -815,7 +815,7 @@ public final class ChatDatabase implements AutoCloseable {
         int safeLimit = Math.max(1, Math.min(limit, 100));
         String sql = """
                 select m.id, c.name as chat_name, u.username as sender, r.username as recipient,
-                       m.body, m.created_at, m.deleted, m.status, m.edited,
+                       m.body, m.created_at, m.deleted, m.system, m.status, m.edited,
                        m.reply_to_message_id as reply_to_id, reply_sender.username as reply_sender,
                        reply.body as reply_body, reply.deleted as reply_deleted
                 from messages m
@@ -851,7 +851,7 @@ public final class ChatDatabase implements AutoCloseable {
         int safeLimit = Math.max(1, Math.min(limit, 50));
         String sql = """
                 select m.id, c.name as chat_name, u.username as sender, r.username as recipient,
-                       m.body, m.created_at, m.deleted, m.status, m.edited,
+                       m.body, m.created_at, m.deleted, m.system, m.status, m.edited,
                        m.reply_to_message_id as reply_to_id, reply_sender.username as reply_sender,
                        reply.body as reply_body, reply.deleted as reply_deleted
                 from messages m
@@ -900,6 +900,7 @@ public final class ChatDatabase implements AutoCloseable {
                 where c.name = ?
                   and m.sender_id <> ?
                   and m.deleted = 0
+                  and m.system = 0
                   and m.status <> ?
                   and (c.type <> 'GROUP' or m.id > cm.joined_after_message_id)
                 """;
@@ -943,6 +944,7 @@ public final class ChatDatabase implements AutoCloseable {
                 where c.name = ?
                   and m.sender_id <> ?
                   and m.deleted = 0
+                  and m.system = 0
                   and m.status <> ?
                   and (c.type <> 'GROUP' or m.id > cm.joined_after_message_id)
                 """;
@@ -978,6 +980,7 @@ public final class ChatDatabase implements AutoCloseable {
                 where id = ?
                   and sender_id = ?
                   and deleted = 0
+                  and system = 0
                 """;
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, requireBody(newBody));
@@ -998,6 +1001,7 @@ public final class ChatDatabase implements AutoCloseable {
                 set deleted = 1, body = '[deleted]'
                 where id = ?
                   and sender_id = ?
+                  and system = 0
                 """;
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, messageId);
@@ -1020,6 +1024,9 @@ public final class ChatDatabase implements AutoCloseable {
         MessageTarget target = requireMessageVisible(messageId, actor.id());
         if (target.deleted()) {
             throw new IllegalArgumentException("Cannot react to deleted message");
+        }
+        if (target.system()) {
+            throw new IllegalArgumentException("Cannot react to system message");
         }
         String normalized = reaction == null ? "" : reaction.trim();
         try {
@@ -1121,6 +1128,7 @@ public final class ChatDatabase implements AutoCloseable {
                         body text not null,
                         created_at text not null,
                         deleted integer not null,
+                        system integer not null default 0,
                         status text not null default 'SENT',
                         edited integer not null default 0,
                         reply_to_message_id integer references messages(id)
@@ -1151,6 +1159,7 @@ public final class ChatDatabase implements AutoCloseable {
             ensureColumn(statement, "chats", "avatar_data", "blob");
             ensureColumn(statement, "chats", "avatar_content_type", "text");
             ensureColumn(statement, "messages", "status", "text not null default 'SENT'");
+            ensureColumn(statement, "messages", "system", "integer not null default 0");
             ensureColumn(statement, "messages", "edited", "integer not null default 0");
             ensureColumn(statement, "messages", "reply_to_message_id", "integer references messages(id)");
             ensureColumn(statement, "chat_members", "joined_at", "text");
@@ -1451,14 +1460,44 @@ public final class ChatDatabase implements AutoCloseable {
     }
 
     /**
+     * Зберігає службове повідомлення всередині групового чату.
+     * Такі записи показуються по центру історії і описують події групи.
+     */
+    public synchronized StoredMessage saveSystemGroupMessage(String groupName, int actorId, String body) {
+        String group = requireName(groupName, "groupName");
+        long chatId = requireGroupId(group);
+        String messageBody = requireBody(body);
+        String sql = """
+                insert into messages(chat_id, sender_id, recipient_id, body, created_at, deleted, system, status, reply_to_message_id)
+                values (?, ?, null, ?, ?, 0, 1, ?, null)
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            statement.setLong(1, chatId);
+            statement.setInt(2, actorId);
+            statement.setString(3, messageBody);
+            statement.setString(4, Instant.now().toString());
+            statement.setString(5, MessageStatus.SENT.name());
+            statement.executeUpdate();
+            try (ResultSet keys = statement.getGeneratedKeys()) {
+                if (keys.next()) {
+                    return historyById(keys.getLong(1));
+                }
+            }
+            throw new IllegalStateException("System message id was not generated");
+        } catch (SQLException e) {
+            throw new IllegalStateException("Cannot save system message", e);
+        }
+    }
+
+    /**
      * Спільний низькорівневий метод збереження повідомлення для приватних і групових чатів.
      */
     private StoredMessage saveMessage(String chatName, int senderId, Integer recipientId, String body, Long replyToMessageId) {
         long chatId = ensureChat(chatName, recipientId == null ? "GROUP" : "PRIVATE");
         validateReplyTarget(chatId, replyToMessageId);
         String sql = """
-                insert into messages(chat_id, sender_id, recipient_id, body, created_at, deleted, status, reply_to_message_id)
-                values (?, ?, ?, ?, ?, 0, ?, ?)
+                insert into messages(chat_id, sender_id, recipient_id, body, created_at, deleted, system, status, reply_to_message_id)
+                values (?, ?, ?, ?, ?, 0, 0, ?, ?)
                 """;
         try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, chatId);
@@ -1492,7 +1531,7 @@ public final class ChatDatabase implements AutoCloseable {
     private StoredMessage historyById(long id) {
         String sql = """
                 select m.id, c.name as chat_name, u.username as sender, r.username as recipient,
-                       m.body, m.created_at, m.deleted, m.status, m.edited,
+                       m.body, m.created_at, m.deleted, m.system, m.status, m.edited,
                        m.reply_to_message_id as reply_to_id, reply_sender.username as reply_sender,
                        reply.body as reply_body, reply.deleted as reply_deleted
                 from messages m
@@ -1597,6 +1636,7 @@ public final class ChatDatabase implements AutoCloseable {
                 resultSet.getString("body"),
                 Instant.parse(resultSet.getString("created_at")),
                 resultSet.getInt("deleted") != 0,
+                resultSet.getInt("system") != 0,
                 MessageStatus.valueOf(resultSet.getString("status")),
                 resultSet.getInt("edited") != 0,
                 replyTo,
@@ -1635,7 +1675,7 @@ public final class ChatDatabase implements AutoCloseable {
 
     private MessageTarget requireMessageVisible(long messageId, int userId) {
         String sql = """
-                select m.id, m.deleted, c.id as chat_id, c.type, c.name, m.sender_id, m.recipient_id, cm.joined_after_message_id
+                select m.id, m.deleted, m.system, c.id as chat_id, c.type, c.name, m.sender_id, m.recipient_id, cm.joined_after_message_id
                 from messages m
                 join chats c on c.id = m.chat_id
                 left join chat_members cm on cm.chat_id = c.id and cm.user_id = ?
@@ -1660,14 +1700,14 @@ public final class ChatDatabase implements AutoCloseable {
                 if (!visible) {
                     throw new IllegalArgumentException("Message is not available");
                 }
-                return new MessageTarget(resultSet.getInt("deleted") != 0);
+                return new MessageTarget(resultSet.getInt("deleted") != 0, resultSet.getInt("system") != 0);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Cannot validate message access", e);
         }
     }
 
-    private record MessageTarget(boolean deleted) {
+    private record MessageTarget(boolean deleted, boolean system) {
     }
 
     private static String privateChatName(int firstUserId, int secondUserId) {

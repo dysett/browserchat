@@ -260,6 +260,9 @@ input:focus, textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px r
 /* Рядок повідомлення вирівнює власні й чужі повідомлення по різних сторонах. */
 .message-row { display: flex; }
 .message-row.own { justify-content: flex-end; }
+.system-message-row { display: flex; justify-content: center; padding: 4px 0; }
+.system-message-pill { max-width: min(76%, 620px); padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 255, 255, 0.72); color: var(--muted); font-size: 12px; text-align: center; box-shadow: 0 1px 4px rgba(7, 76, 119, 0.06); }
+[data-theme="dark"] .system-message-pill { background: rgba(19, 33, 49, 0.78); }
 /* Бульбашка повідомлення містить текст, автора, час і службові позначки. */
 .message-bubble { max-width: min(78%, 680px); padding: 9px 11px; border: 1px solid var(--line); border-left: 3px solid var(--sender-color, var(--line)); border-radius: 7px; background: var(--theirs); box-shadow: 0 2px 7px rgba(7, 76, 119, 0.08); }
 .message-row.own .message-bubble { background: var(--mine); border-color: #8fd7f2; }

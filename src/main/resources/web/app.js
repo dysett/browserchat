@@ -514,7 +514,7 @@
 
     function chatPreview(chat) {
         if (!chat.lastText) return chat.type === "group" ? "Group" : chat.online ? "Online" : "Offline";
-        const prefix = chat.type === "group" && chat.lastSender ? `${chat.lastSender}: ` : "";
+        const prefix = chat.type === "group" && chat.lastSender && !chat.lastSystem ? `${chat.lastSender}: ` : "";
         return `${formatTime(new Date(chat.lastCreatedAt))} ${prefix}${chat.lastText}`.trim();
     }
 
@@ -580,7 +580,7 @@
         const shouldStick = messageList.scrollTop + messageList.clientHeight >= messageList.scrollHeight - 30;
         const filter = messageSearch.value.trim().toLowerCase();
         const messages = state.currentMessages.filter((message) => {
-            return !filter || `${message.sender} ${message.text}`.toLowerCase().includes(filter);
+            return !filter || `${message.sender || ""} ${message.text || ""}`.toLowerCase().includes(filter);
         });
         messageList.replaceChildren();
         if (!messages.length) {
@@ -597,6 +597,9 @@
      * Формує HTML одного повідомлення: текст, автора, час, статус, відповідь і реакції.
      */
     function messageNode(message) {
+        if (message.system) {
+            return systemMessageNode(message);
+        }
         const own = message.sender === state.currentUser.username;
         const row = document.createElement("article");
         row.className = `message-row${own ? " own" : ""}`;
@@ -628,6 +631,22 @@
             attachMessageInteractionHandlers(bubble, message);
         }
         row.append(bubble);
+        return row;
+    }
+
+
+    /**
+     * Формує службове повідомлення групи: приєднання, вихід або видалення учасника.
+     */
+    function systemMessageNode(message) {
+        const row = document.createElement("article");
+        row.className = "system-message-row";
+        row.id = `message-${message.id}`;
+        const pill = document.createElement("span");
+        pill.className = "system-message-pill";
+        const time = formatTime(new Date(message.createdAt));
+        pill.textContent = time ? `${message.text} · ${time}` : message.text;
+        row.append(pill);
         return row;
     }
 

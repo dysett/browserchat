@@ -15,6 +15,7 @@ public record StoredMessage(
         String body,
         Instant createdAt,
         boolean deleted,
+        boolean system,
         MessageStatus status,
         boolean edited,
         Long replyToMessageId,
